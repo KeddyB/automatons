@@ -107,7 +107,18 @@ class OverlayService : Service() {
     }
 
     fun updateStatus(status: String) {
-        statusTextView.text = status
+        statusTextView.post {
+            statusTextView.text = status
+        }
+    }
+
+    fun setFocusable(focusable: Boolean) {
+        if (focusable) {
+            params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        } else {
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        }
+        windowManager.updateViewLayout(overlayView, params)
     }
 
     override fun onDestroy() {

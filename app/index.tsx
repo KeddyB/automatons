@@ -1,10 +1,10 @@
-import { Image } from 'expo-image';
-import { StyleSheet, NativeModules, Button, View, Text, TextInput, ScrollView, SafeAreaView } from 'react-native';
+import { StyleSheet, NativeModules, Button, View, TextInput, ScrollView, SafeAreaView, DeviceEventEmitter } from 'react-native';
 import { useEffect, useState, useRef } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WorkflowEngine } from '../utils/WorkflowEngine';
+import { useThemeColor } from '@/hooks/use-theme-color';
 
 const { AccessibilityModule } = NativeModules;
 
@@ -14,8 +14,14 @@ export default function HomeScreen() {
   const [workflowStatus, setWorkflowStatus] = useState<string>('Idle');
   const [isServiceEnabled, setIsServiceEnabled] = useState<boolean>(false);
   const [hasOverlayPermission, setHasOverlayPermission] = useState<boolean>(false);
+  const [isOverlayFocusable, setIsOverlayFocusable] = useState<boolean>(false);
 
   const workflowEngineRef = useRef<WorkflowEngine | null>(null);
+
+  const backgroundColor = useThemeColor({}, 'background');
+  const textColor = useThemeColor({}, 'text');
+  const sectionBg = useThemeColor({ light: '#f9f9f9', dark: '#222' }, 'background');
+  const borderColor = useThemeColor({ light: '#ddd', dark: '#444' }, 'background');
 
   const checkPermissions = () => {
     if (!AccessibilityModule) return;
@@ -43,7 +49,21 @@ export default function HomeScreen() {
       AccessibilityModule.updateOverlayStatus(status);
     });
 
-    return () => clearInterval(interval);
+    // Listen for commands from the Overlay
+    const commandListener = DeviceEventEmitter.addListener('onCommand', (command: string) => {
+      setCommandInputText(command);
+      workflowEngineRef.current?.run(command);
+    });
+
+    const stopListener = DeviceEventEmitter.addListener('onStopAutomation', () => {
+      workflowEngineRef.current?.stop();
+    });
+
+    return () => {
+      clearInterval(interval);
+      commandListener.remove();
+      stopListener.remove();
+    };
   }, []);
 
   const handleGetScreenContent = () => {
@@ -68,47 +88,63 @@ export default function HomeScreen() {
     workflowEngineRef.current?.stop();
   };
 
+  const toggleOverlayFocus = () => {
+    const newState = !isOverlayFocusable;
+    setIsOverlayFocusable(newState);
+    AccessibilityModule.setOverlayFocusable(newState);
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <ThemedView style={styles.header}>
+        <ThemedView style={[styles.header, { backgroundColor }]}>
           <ThemedText type="title">Automatons AI</ThemedText>
-          <ThemedText type="subtitle" style={{ color: isServiceEnabled ? 'green' : 'red' }}>
+          <ThemedText type="subtitle" style={{ color: isServiceEnabled ? '#4CAF50' : '#F44336' }}>
             Service: {isServiceEnabled ? 'ACTIVE' : 'INACTIVE'}
           </ThemedText>
         </ThemedView>
 
-        <ThemedView style={styles.section}>
+        <ThemedView style={[styles.section, { backgroundColor: sectionBg, borderColor }]}>
           <ThemedText type="subtitle">1. Setup Permissions</ThemedText>
           <View style={styles.buttonRow}>
             <Button
-              title="Accessibility Settings"
+              title="Accessibility"
               onPress={() => AccessibilityModule.openAccessibilitySettings()}
             />
             <Button
-              title="Overlay Permission"
+              title="Overlay"
               onPress={() => AccessibilityModule.requestOverlayPermission()}
               disabled={hasOverlayPermission}
             />
           </View>
         </ThemedView>
 
-        <ThemedView style={styles.section}>
+        <ThemedView style={[styles.section, { backgroundColor: sectionBg, borderColor }]}>
           <ThemedText type="subtitle">2. Controls</ThemedText>
           <View style={styles.buttonRow}>
             <Button title="Start Overlay" onPress={() => AccessibilityModule.startOverlay()} />
             <Button title="Stop Overlay" onPress={() => AccessibilityModule.stopOverlay()} />
           </View>
+          <View style={{ marginTop: 10 }}>
+            <Button 
+                title={isOverlayFocusable ? "Disable Overlay Input" : "Enable Overlay Input"} 
+                onPress={toggleOverlayFocus} 
+                color={isOverlayFocusable ? "#f44336" : "#2196F3"}
+            />
+            <ThemedText style={{ fontSize: 12, marginTop: 5, fontStyle: 'italic' }}>
+                Note: When Overlay Input is enabled, you cannot click through the overlay.
+            </ThemedText>
+          </View>
         </ThemedView>
 
-        <ThemedView style={styles.section}>
+        <ThemedView style={[styles.section, { backgroundColor: sectionBg, borderColor }]}>
           <ThemedText type="subtitle">3. AI Command</ThemedText>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: textColor, backgroundColor }]}
             onChangeText={setCommandInputText}
             value={commandInputText}
             placeholder="e.g., click on Settings"
-            placeholderTextColor="#999"
+            placeholderTextColor="#888"
           />
           <View style={styles.buttonRow}>
             <Button title="Run AI" onPress={handleStartWorkflow} color="#2196F3" />
@@ -117,14 +153,14 @@ export default function HomeScreen() {
           <ThemedText style={styles.statusText}>Status: {workflowStatus}</ThemedText>
         </ThemedView>
 
-        <ThemedView style={styles.section}>
+        <ThemedView style={[styles.section, { backgroundColor: sectionBg, borderColor }]}>
           <ThemedText type="subtitle">4. Manual Debug</ThemedText>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: textColor, backgroundColor }]}
             onChangeText={setTargetText}
             value={targetText}
             placeholder="Text to click"
-            placeholderTextColor="#999"
+            placeholderTextColor="#888"
           />
           <Button title="Test Click" onPress={handleClickElement} />
           <View style={{ marginTop: 10 }}>
@@ -139,7 +175,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
   },
   scrollContent: {
     padding: 20,
@@ -151,10 +186,8 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 25,
     padding: 15,
-    borderRadius: 10,
-    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#eee',
   },
   buttonRow: {
     flexDirection: 'row',
@@ -164,14 +197,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   input: {
-    height: 45,
-    borderColor: '#ddd',
+    height: 48,
+    borderColor: '#888',
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
     marginBottom: 10,
-    backgroundColor: '#fff',
-    color: '#000',
   },
   statusText: {
     marginTop: 10,

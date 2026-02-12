@@ -212,4 +212,9 @@ class AccessibilityModule(reactContext: ReactApplicationContext) : ReactContextB
     fun isServiceEnabled(callback: Callback) {
         callback.invoke(MyAccessibilityService.instance != null)
     }
+
+    @ReactMethod
+    fun setOverlayFocusable(focusable: Boolean) {
+        OverlayService.instance?.setFocusable(focusable)
+    }
 }
