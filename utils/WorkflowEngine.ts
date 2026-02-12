@@ -1,100 +1,128 @@
 // utils/WorkflowEngine.ts
 import { NativeModules } from 'react-native';
-import { AutomationAction } from './InstructionParser';
+import { AutomationAction, parseInstruction } from './InstructionParser';
 
 const { AccessibilityModule } = NativeModules;
 
 export class WorkflowEngine {
-  private workflow: AutomationAction[];
-  private currentStepIndex: number;
   private isRunning: boolean;
   private onStatusUpdate: (status: string) => void;
+  private previousSteps: AutomationAction[];
 
   constructor(onStatusUpdate: (status: string) => void) {
-    this.workflow = [];
-    this.currentStepIndex = 0;
     this.isRunning = false;
     this.onStatusUpdate = onStatusUpdate;
+    this.previousSteps = [];
   }
 
-  setWorkflow(workflow: AutomationAction[]) {
-    this.workflow = workflow;
-    this.currentStepIndex = 0;
-  }
-
-  async start() {
+  async run(userInstruction: string) {
+    if (!AccessibilityModule) {
+      this.onStatusUpdate('Error: AccessibilityModule is not defined.');
+      return;
+    }
     this.isRunning = true;
-    this.onStatusUpdate('Workflow started.');
-    while (this.isRunning && this.currentStepIndex < this.workflow.length) {
-      const action = this.workflow[this.currentStepIndex];
-      this.onStatusUpdate(`Executing step ${this.currentStepIndex + 1}: ${action.action}`);
-      const success = await this.executeAction(action);
-      if (success) {
-        this.currentStepIndex++;
-      } else {
-        this.onStatusUpdate(`Action failed: ${action.action}. Stopping workflow.`);
-        this.stop();
-        return;
+    this.previousSteps = [];
+    this.onStatusUpdate('Automation started.');
+
+    while (this.isRunning) {
+      this.onStatusUpdate('Observing screen...');
+      const currentUi = await this.getCurrentUi();
+
+      if (!currentUi) {
+        this.onStatusUpdate('Failed to capture screen content. Retrying...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        continue;
       }
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Small delay between actions
+
+      this.onStatusUpdate('Thinking...');
+      const nextAction = await parseInstruction(
+        userInstruction,
+        currentUi,
+        JSON.stringify(this.previousSteps)
+      );
+
+      if (nextAction.action === 'NONE') {
+        this.onStatusUpdate(`Finished: ${nextAction.reason}`);
+        break;
+      }
+
+      this.onStatusUpdate(`Executing: ${nextAction.action} ${nextAction.target?.text || nextAction.target?.id || ''}`);
+      const success = await this.executeAction(nextAction);
+
+      if (success) {
+        this.previousSteps.push(nextAction);
+        if (this.previousSteps.length > 10) this.previousSteps.shift(); // Keep context short
+      } else {
+        this.onStatusUpdate(`Action failed: ${nextAction.action}. Retrying in 2s...`);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
-    if (this.isRunning) {
-      this.onStatusUpdate('Workflow finished successfully.');
-    }
-    this.stop();
+
+    this.isRunning = false;
+    this.onStatusUpdate('Automation stopped.');
   }
 
   stop() {
     this.isRunning = false;
-    this.onStatusUpdate('Workflow stopped.');
+  }
+
+  private async getCurrentUi(): Promise<string | null> {
+    return new Promise((resolve) => {
+      AccessibilityModule.getFlattenedScreenContent((content: string | null) => {
+        resolve(content);
+      });
+    });
   }
 
   private async executeAction(action: AutomationAction): Promise<boolean> {
     return new Promise((resolve) => {
+      const callback = (result: boolean) => resolve(result);
+
       switch (action.action) {
         case 'CLICK':
-          if (action.target?.text) {
-            AccessibilityModule.clickElementByText(action.target.text, (result: boolean) => {
-              resolve(result);
-            });
+          if (action.target?.id !== undefined) {
+            AccessibilityModule.clickElementByIndex(action.target.id, callback);
+          } else if (action.target?.text) {
+            AccessibilityModule.clickElementByText(action.target.text, callback);
           } else {
             resolve(false);
           }
           break;
+
+        case 'INPUT_TEXT':
+          if (action.target?.id !== undefined && action.value) {
+            AccessibilityModule.inputTextElementByIndex(action.target.id, action.value, callback);
+          } else if (action.target?.text && action.value) {
+            AccessibilityModule.inputTextElementByText(action.target.text, action.value, callback);
+          } else {
+            resolve(false);
+          }
+          break;
+
         case 'SCROLL_FORWARD':
           if (action.target?.text) {
-            AccessibilityModule.scrollForwardElementByText(action.target.text, (result: boolean) => {
-              resolve(result);
-            });
+            AccessibilityModule.scrollForwardElementByText(action.target.text, callback);
           } else {
+            // Default scroll if no target specified? 
             resolve(false);
           }
           break;
+
         case 'SCROLL_BACKWARD':
           if (action.target?.text) {
-            AccessibilityModule.scrollBackwardElementByText(action.target.text, (result: boolean) => {
-              resolve(result);
-            });
+            AccessibilityModule.scrollBackwardElementByText(action.target.text, callback);
           } else {
             resolve(false);
           }
           break;
-        case 'INPUT_TEXT':
-          // Need to implement native method for this
-          this.onStatusUpdate('INPUT_TEXT action not yet implemented.');
-          resolve(false);
-          break;
+
         case 'NAVIGATE_APP':
-          // Need to implement native method for this
-          this.onStatusUpdate('NAVIGATE_APP action not yet implemented.');
+          this.onStatusUpdate('NAVIGATE_APP not yet implemented natively.');
           resolve(false);
           break;
-        case 'NONE':
-          this.onStatusUpdate(`No action: ${action.reason}`);
-          resolve(true);
-          break;
+
         default:
-          this.onStatusUpdate(`Unknown action: ${action.action}`);
           resolve(false);
           break;
       }

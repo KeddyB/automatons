@@ -21,6 +21,12 @@ export default function HomeScreen() {
   const workflowEngineRef = useRef<WorkflowEngine | null>(null);
 
   useEffect(() => {
+    if (!AccessibilityModule) {
+      console.error("AccessibilityModule is not defined. Make sure the native module is correctly linked and the app is built with native code.");
+      setWorkflowStatus("Error: Native Module Missing");
+      return;
+    }
+
     AccessibilityModule.hasOverlayPermission((hasPermission: boolean) => {
       if (!hasPermission) {
         AccessibilityModule.requestOverlayPermission();
@@ -71,21 +77,8 @@ export default function HomeScreen() {
   };
 
   const handleStartWorkflow = async () => {
-    if (!workflowEngineRef.current) return;
-
-    // Get current screen content for AI
-    AccessibilityModule.getScreenContent(async (content: string) => {
-      const currentUiJson = content || '{}'; // Ensure it's a string
-
-      // Parse user instruction into an action (mocked for now)
-      const parsedAction: AutomationAction = await parseInstruction(commandInputText, currentUiJson);
-
-      // For demonstration, create a simple workflow based on the parsed action
-      const workflow: AutomationAction[] = parsedAction.action !== 'NONE' ? [parsedAction] : [];
-
-      workflowEngineRef.current?.setWorkflow(workflow);
-      workflowEngineRef.current?.start();
-    });
+    if (!workflowEngineRef.current || !commandInputText) return;
+    workflowEngineRef.current.run(commandInputText);
   };
 
   const handleStopWorkflow = () => {
