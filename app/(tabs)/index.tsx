@@ -33,6 +33,7 @@ export default function HomeScreen() {
       }
     });
 
+    /* Commenting out high-frequency events to prevent lag
     const accessibilityEventListener = DeviceEventEmitter.addListener('onAccessibilityEvent', (event) => {
       setLastEvent(event);
     });
@@ -40,6 +41,7 @@ export default function HomeScreen() {
     const screenContentListener = DeviceEventEmitter.addListener('onScreenContentChanged', (content) => {
       setScreenContent(content);
     });
+    */
 
     workflowEngineRef.current = new WorkflowEngine((status) => {
       setWorkflowStatus(status);
@@ -47,8 +49,10 @@ export default function HomeScreen() {
     });
 
     return () => {
+      /*
       accessibilityEventListener.remove();
       screenContentListener.remove();
+      */
     };
   }, []);
 
@@ -124,7 +128,6 @@ export default function HomeScreen() {
           title="Get Screen Content"
           onPress={handleGetScreenContent}
         />
-        <Text>{screenContent}</Text>
       </ThemedView>
       <ThemedView style={styles.stepContainer}>
         <ThemedText type="subtitle">Step 4: Automation Actions</ThemedText>
@@ -153,10 +156,6 @@ export default function HomeScreen() {
           <Button title="Stop AI Workflow" onPress={handleStopWorkflow} />
         </View>
         <ThemedText>Workflow Status: {workflowStatus}</ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Last Accessibility Event:</ThemedText>
-        <Text>{lastEvent}</Text>
       </ThemedView>
     </ParallaxScrollView>
   );
