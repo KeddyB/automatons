@@ -1,54 +1,56 @@
-// utils/InstructionParser.ts
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { PROMPT_TEMPLATE } from "../ai/prompt_template";
 
 export interface AutomationAction {
   action: 'CLICK' | 'SCROLL_FORWARD' | 'SCROLL_BACKWARD' | 'INPUT_TEXT' | 'NAVIGATE_APP' | 'NONE';
   target?: {
     text?: string;
     resourceId?: string;
-    // Add other target identifiers as needed
+    id?: number;
   };
   value?: string; // For INPUT_TEXT action
   appName?: string; // For NAVIGATE_APP action
   reason?: string; // For NONE action
 }
 
-/**
- * Parses a user instruction and screen content to determine the next automation action.
- * In a real scenario, this would involve sending data to an LLM or a sophisticated rule engine.
- * For now, it's a mock that returns a predefined action based on a simple heuristic.
- *
- * @param userInstruction The instruction provided by the user.
- * @param currentUiJson The JSON representation of the current screen's UI hierarchy.
- * @param previousStepsJson Optional: JSON of previous automation steps for context.
- * @returns A Promise resolving to an AutomationAction object.
- */
+// In a real Expo app, set this in your .env file as EXPO_PUBLIC_GEMINI_API_KEY
+const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
+const genAI = new GoogleGenerativeAI(API_KEY);
+
 export async function parseInstruction(
   userInstruction: string,
   currentUiJson: string,
   previousStepsJson: string = '[]'
 ): Promise<AutomationAction> {
-  console.log('Parsing instruction with:', { userInstruction, currentUiJson, previousStepsJson });
+  console.log('Parsing instruction with Gemini...');
 
-  // This is a placeholder for LLM integration.
-  // In a real application, you would construct the prompt using `prompt_template.md`
-  // send it to an LLM API, and parse the JSON response.
-
-  // Mock implementation:
-  if (userInstruction.toLowerCase().includes("click example button")) {
-    return { action: 'CLICK', target: { text: 'Example Button' } };
-  }
-  if (userInstruction.toLowerCase().includes("scroll down")) {
-    // This assumes there's a scrollable element. In a real scenario,
-    // the LLM would identify *which* element to scroll based on currentUiJson.
-    return { action: 'SCROLL_FORWARD', target: { text: 'Scrollable List' } }; // Placeholder
-  }
-  if (userInstruction.toLowerCase().includes("type 'hello'")) {
-    return { action: 'INPUT_TEXT', target: { text: 'Input Field' }, value: 'hello' }; // Placeholder
-  }
-  if (userInstruction.toLowerCase().includes("open settings")) {
-    return { action: 'NAVIGATE_APP', appName: 'Settings' };
+  if (!API_KEY) {
+    console.error("EXPO_PUBLIC_GEMINI_API_KEY is not set.");
+    return { action: 'NONE', reason: 'API Key missing. Please set EXPO_PUBLIC_GEMINI_API_KEY in your .env file.' };
   }
 
-  // Default to no action
-  return { action: 'NONE', reason: 'Could not determine a specific action for the instruction.' };
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const prompt = PROMPT_TEMPLATE
+      .replace('{{CURRENT_UI_JSON}}', currentUiJson)
+      .replace('{{USER_INSTRUCTION}}', userInstruction)
+      .replace('{{PREVIOUS_STEPS_JSON}}', previousStepsJson);
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    // Clean the response (sometimes LLMs wrap JSON in code blocks)
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return parsed as AutomationAction;
+    }
+
+    return { action: 'NONE', reason: 'Failed to parse JSON from AI response.' };
+  } catch (error) {
+    console.error('Error calling Gemini API:', error);
+    return { action: 'NONE', reason: `AI Error: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }

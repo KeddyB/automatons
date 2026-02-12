@@ -207,4 +207,9 @@ class AccessibilityModule(reactContext: ReactApplicationContext) : ReactContextB
     fun updateOverlayStatus(status: String) {
         OverlayService.instance?.updateStatus(status)
     }
+
+    @ReactMethod
+    fun isServiceEnabled(callback: Callback) {
+        callback.invoke(MyAccessibilityService.instance != null)
+    }
 }
